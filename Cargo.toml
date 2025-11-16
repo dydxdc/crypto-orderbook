@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 slab = "0.4.11"
+uuid = { version = "1.18.1", features = ["v4"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

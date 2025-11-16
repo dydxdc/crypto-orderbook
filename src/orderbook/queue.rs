@@ -20,16 +20,16 @@ impl<K, V> Node<K, V> {
     }
 }
 
-pub struct LinkedList<K, V> {
+pub struct Queue<K, V> {
     keys: HashMap<K, usize>,
     backing: slab::Slab<Node<K, V>>,
     head: Option<usize>,
     tail: Option<usize>,
 }
 
-impl<K: Eq + Hash + Clone, V> LinkedList<K, V> {
-    pub fn new() -> LinkedList<K, V> {
-        LinkedList {
+impl<K: Eq + Hash + Clone, V> Queue<K, V> {
+    pub fn new() -> Queue<K, V> {
+        Queue {
             keys: HashMap::new(),
             backing: Slab::new(),
             head: None,
@@ -49,6 +49,31 @@ impl<K: Eq + Hash + Clone, V> LinkedList<K, V> {
         let id = self.head?;
         let node = self.backing.get_mut(id)?;
         Some(&mut node.value)
+    }
+
+    pub fn remove_key(&mut self, key: K) -> bool {
+        match self.keys.remove(&key) {
+            Some(key) => {
+                let node = self.backing.remove(key);
+
+                if let Some(nid) = node.next {
+                    let next_node = self.backing.get_mut(nid).unwrap();
+                    next_node.prev = node.prev;
+                } else {
+                    self.tail = None
+                }
+
+                if let Some(pid) = node.prev {
+                    let prev_node = self.backing.get_mut(pid).unwrap();
+                    prev_node.next = node.next;
+                } else {
+                    self.head = None
+                }
+
+                true
+            }
+            None => false,
+        }
     }
 
     pub fn push_back(&mut self, key: K, value: V) -> bool {
@@ -113,7 +138,7 @@ impl<K: Eq + Hash + Clone, V> LinkedList<K, V> {
 }
 
 pub struct Iter<'a, K, V> {
-    list: &'a LinkedList<K, V>,
+    list: &'a Queue<K, V>,
     current: Option<usize>,
 }
 
@@ -128,7 +153,7 @@ impl<'a, K: Eq + Hash + Clone, V> Iterator for Iter<'a, K, V> {
     }
 }
 
-impl<K: Eq + Hash + Clone, V> Default for LinkedList<K, V> {
+impl<K: Eq + Hash + Clone, V> Default for Queue<K, V> {
     fn default() -> Self {
         Self::new()
     }
@@ -136,11 +161,11 @@ impl<K: Eq + Hash + Clone, V> Default for LinkedList<K, V> {
 
 #[cfg(test)]
 mod test {
-    use super::LinkedList;
+    use super::Queue;
 
     #[test]
     fn basics() {
-        let mut list = LinkedList::new();
+        let mut list = Queue::new();
 
         // Check empty list behaves right
         assert_eq!(list.pop_front(), None);
@@ -153,5 +178,24 @@ mod test {
         // Check normal removal
         assert_eq!(list.pop_front(), Some(1));
         assert_eq!(list.pop_front(), Some(2));
+    }
+
+    #[test]
+    fn remove_key() {
+        let mut list = Queue::new();
+
+        list.push_back("a", "a");
+        list.push_back("b", "b");
+        list.push_back("c", "c");
+        list.push_back("d", "d");
+
+        assert!(!list.remove_key("e"));
+        assert!(list.remove_key("b"));
+
+        assert_eq!(list.front(), Some(&mut "a"));
+
+        assert_eq!(list.pop_front(), Some("a"));
+        assert_eq!(list.pop_front(), Some("c"));
+        assert_eq!(list.pop_front(), Some("d"));
     }
 }
