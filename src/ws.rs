@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio_rustls::{TlsConnector, rustls::ClientConfig};
 use url::Url;
 
-pub async fn connect(url: &str) -> Result<mpsc::Receiver<String>, WsError> {
+pub async fn connect(url: &str) -> Result<mpsc::Receiver<Vec<u8>>, WsError> {
     let url_parsed = Url::parse(url)?;
     let host = url_parsed.host_str().ok_or(WsError::MissingHost)?;
 
@@ -57,11 +57,15 @@ pub async fn connect(url: &str) -> Result<mpsc::Receiver<String>, WsError> {
         loop {
             match ws.read_frame().await {
                 Ok(frame) => match frame.opcode {
-                    OpCode::Text => {
-                        if let Ok(text) = String::from_utf8(frame.payload.to_vec()) {
-                            if tx.send(text).await.is_err() {
-                                break;
-                            }
+                    OpCode::Text | OpCode::Binary => {
+                        let payload = match frame.payload {
+                            fastwebsockets::Payload::Owned(data) => data,
+                            fastwebsockets::Payload::Borrowed(data) => data.to_vec(),
+                            fastwebsockets::Payload::BorrowedMut(data) => data.to_vec(),
+                            fastwebsockets::Payload::Bytes(data) => data.into(),
+                        };
+                        if tx.send(payload).await.is_err() {
+                            break;
                         }
                     }
                     OpCode::Close => break,

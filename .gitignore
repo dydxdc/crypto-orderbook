@@ -1,1 +1,50 @@
-/target
+# Deny all by default
+*
+
+# Allow directories
+!src/
+!src/**
+!examples/
+!examples/**
+!benches/
+!benches/**
+!tests/
+!tests/**
+!.cargo/
+!.cargo/**
+!.github/
+!.github/**
+
+# Rust source files
+!*.rs
+!Cargo.toml
+!Cargo.lock
+
+# Configuration files
+!*.toml
+!.cargo/
+!.cargo/**
+
+# Documentation
+!*.md
+!LICENSE
+!LICENSE-*
+
+# Git
+!.gitignore
+!.gitattributes
+
+# CI/CD
+!.github/
+!.github/**
+!.gitlab-ci.yml
+
+# Examples and tests
+!examples/
+!examples/**
+!tests/
+!tests/**
+!benches/
+!benches/**
+
+

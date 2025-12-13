@@ -3,19 +3,27 @@ use serde::{Deserialize, Serialize};
 use crate::orderbook_l2::{L2Order, L2Price, L2PriceSize, L2Size, Sequence};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct DepthUpdate {
+pub struct DepthUpdate<'a> {
     #[serde(rename = "e")]
-    pub event_type: String,
-
-    #[serde(rename = "E")]
-    pub event_time: u64,
-
-    #[serde(rename = "T")]
-    pub transaction_time: u64,
+    #[serde(borrow)]
+    pub event_type: std::borrow::Cow<'a, str>,
 
     #[serde(rename = "s")]
-    pub symbol: String,
+    #[serde(borrow)]
+    pub symbol: std::borrow::Cow<'a, str>,
 
+    #[serde(rename = "b")]
+    pub bids: Vec<PriceSize>,
+
+    #[serde(rename = "a")]
+    pub asks: Vec<PriceSize>,
+
+    #[serde(flatten)]
+    pub seq: DepthUpdateSeq,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepthUpdateSeq {
     #[serde(rename = "U")]
     pub first_update_id: u64,
 
@@ -25,24 +33,31 @@ pub struct DepthUpdate {
     #[serde(rename = "pu")]
     pub previous_update_id: u64,
 
-    #[serde(rename = "b")]
-    pub bids: Vec<PriceSize>,
+    #[serde(rename = "E")]
+    pub event_time: u64,
 
-    #[serde(rename = "a")]
-    pub asks: Vec<PriceSize>,
+    #[serde(rename = "T")]
+    pub transaction_time: u64,
 }
 
-impl From<DepthUpdate> for L2Order<DepthUpdate> {
-    fn from(val: DepthUpdate) -> Self {
+impl<'a> From<&DepthUpdate<'a>> for DepthUpdateSeq {
+    fn from(val: &DepthUpdate<'a>) -> Self {
+        val.seq
+    }
+}
+
+impl<'a> From<DepthUpdate<'a>> for L2Order<DepthUpdateSeq> {
+    fn from(val: DepthUpdate<'a>) -> Self {
         let bids = val.bids.iter().cloned().map(Into::into).collect();
         let asks = val.asks.iter().cloned().map(Into::into).collect();
+        let seq = val.seq;
 
         L2Order {
-            id: Sequence(val.last_update_id),
+            id: Sequence(seq.last_update_id),
             bids,
             asks,
             is_snapshot: false,
-            o: val,
+            o: seq,
         }
     }
 }
@@ -91,8 +106,8 @@ pub(crate) mod f64_to_u64 {
     {
         #[derive(Deserialize)]
         #[serde(untagged)]
-        enum Num {
-            S(String),
+        enum Num<'a> {
+            S(&'a str),
             F(f64),
         }
 
@@ -113,13 +128,12 @@ mod test {
     #[test]
     fn deserialize_depth_update() {
         const FLOAT_SCALE: f64 = 10_000_000_000.0;
-
         let d = r#"{"e":"depthUpdate","E":1571889248277,"T":1571889248276,"s":"BTCUSDT","U":390497796,"u":390497878,"pu":390497794,"b":[["7403.89","0.002"],["7403.90","3.906"],["7404.00","1.428"]],"a":[["7405.96","3.340"],["7406.63","4.525"],["7407.08","2.475"]]}"#;
         let depth_update: DepthUpdate = serde_json::from_str(d).unwrap();
 
         assert_eq!(depth_update.event_type, "depthUpdate");
-        assert_eq!(depth_update.event_time, 1571889248277);
-        assert_eq!(depth_update.transaction_time, 1571889248276);
+        assert_eq!(depth_update.seq.event_time, 1571889248277);
+        assert_eq!(depth_update.seq.transaction_time, 1571889248276);
         assert_eq!(depth_update.symbol, "BTCUSDT");
 
         let expected_bids = vec![
