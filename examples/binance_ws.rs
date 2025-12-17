@@ -1,6 +1,7 @@
-use orderbook::binance::types::{DepthUpdate, DepthUpdateSeq};
+use orderbook::binance::types::DepthUpdate;
 use orderbook::ws::connect;
 use serde_json;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -9,26 +10,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let mut ws = connect(url).await?;
 
-    let book = orderbook::binance::Book::new_um("BTCUSDT");
+    let mut book = orderbook::binance::Book::new_um("BTCUSDT", 1000, Duration::from_millis(0));
 
-    while let Some(res) = ws.rx.recv().await {
-        let json = match res {
-            Ok(msg) => msg,
-            Err(e) => {
-                eprintln!("Connection error: {}", e);
-                break;
-            }
-        };
+    let writer = book.writer();
+    tokio::spawn(async move {
+        loop {
+            let Some(res) = ws.rx.recv().await else { break };
+            let json = match res {
+                Ok(msg) => msg,
+                Err(e) => {
+                    eprintln!("Connection error: {}", e);
+                    break;
+                }
+            };
 
-        match serde_json::from_slice::<DepthUpdate>(&json) {
-            Ok(depth_update) => {
-                let order: orderbook::l2_book::Order<DepthUpdateSeq> = depth_update.into();
-                book.update(order).await;
-            }
-            Err(e) => {
-                eprintln!("Error parsing message: {:?}", e);
+            match serde_json::from_slice::<DepthUpdate>(&json) {
+                Ok(depth_update) => {
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+                    let latency = now - depth_update.seq.event_time_ms;
+                    println!("Received depth update latency: {}ms", latency);
+
+                    writer.update(depth_update.into()).await;
+                }
+                Err(e) => {
+                    eprintln!("Error parsing message: {:?}", e);
+                }
             }
         }
+    });
+
+    while let Some(snapshot) = book.recv().await {
+        let mid: f64 = snapshot.mid().into();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+        let latency = now - snapshot.ts_ms;
+        println!("Received snapshot mid price: {:.2}, latency: {}ms", mid, latency);
     }
 
     Ok(())
